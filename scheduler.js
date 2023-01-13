@@ -41,8 +41,9 @@ class Scheduler {
 
 		this.element.appendChild(container);
 
-		this.addListeners();
 		this.loadEvents(this.events);
+
+		this.addGrabListeners();
 	}
 
 	createHeader() {
@@ -137,6 +138,25 @@ class Scheduler {
 		bodyContainer.addEventListener("mouseout", (e) =>
 			this.handleMouseOut(e, this.scheduleId)
 		);
+		bodyContainer.addEventListener("mousedown", (e) => {
+			if (this.eventGrabbed.grabbed || this.eventGrabbed.resizing) return;
+			if (e.target.classList.contains("schedulerModalItem-" + this.scheduleId))
+				return;
+			let modals = document.querySelectorAll(
+				".schedulerModalContainer-" + this.scheduleId
+			);
+			if (modals.length) {
+				modals.forEach((modal) => modal.remove());
+			} else {
+				if (e.target.classList.contains("schedulerRow-" + this.scheduleId)) {
+					this.createAddModal(e);
+				} else if (
+					e.target.classList.contains("schedulerEvent-" + this.scheduleId)
+				) {
+					this.createEditModal(e);
+				}
+			}
+		});
 
 		return bodyContainer;
 	}
@@ -217,9 +237,13 @@ class Scheduler {
 		hoverTime.style.opacity = 0;
 	}
 
-	addListeners() {}
-
 	loadEvents(eventArray) {
+		let allEvents = document.querySelectorAll(
+			".schedulerEvent-" + this.scheduleId
+		);
+		if (allEvents.length > 0) {
+			allEvents.forEach((event) => event.remove());
+		}
 		let allRows = document.querySelectorAll(".schedulerRow-" + this.scheduleId);
 
 		allRows.forEach((row) => {
@@ -250,6 +274,10 @@ class Scheduler {
 				eventCard.dataset.timeEnd = event.timeEnd;
 				eventCard.dataset.title = event.title;
 
+				let eventInfo = document.createElement("div");
+				eventInfo.classList.add("schedulerEventInfo");
+				eventInfo.classList.add("schedulerEventInfo-" + this.scheduleId);
+
 				let eventTitle = document.createElement("p");
 				eventTitle.classList.add("schedulerEventTitle");
 				eventTitle.classList.add("schedulerEventTitle-" + this.scheduleId);
@@ -259,6 +287,9 @@ class Scheduler {
 				eventTime.classList.add("schedulerEventTime");
 				eventTime.classList.add("schedulerEventTime-" + this.scheduleId);
 				eventTime.innerText = event.timeStart + " - " + event.timeEnd;
+
+				eventInfo.appendChild(eventTitle);
+				eventInfo.appendChild(eventTime);
 
 				let grabSVG = `
                 <svg id="Lag_1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 50 27.65"><circle cx="5.51" cy="5.51" r="5.51"/><circle cx="25" cy="5.51" r="5.51"/><circle cx="44.49" cy="5.51" r="5.51"/><circle cx="5.51" cy="22.14" r="5.51"/><circle cx="25" cy="22.14" r="5.51"/><circle cx="44.49" cy="22.14" r="5.51"/></svg>
@@ -278,19 +309,14 @@ class Scheduler {
 
 				eventCard.appendChild(eventGrabber);
 				eventCard.appendChild(eventResize);
-				eventCard.appendChild(eventTitle);
-				eventCard.appendChild(eventTime);
+				eventCard.appendChild(eventInfo);
 
 				row.appendChild(eventCard);
 			}
 		});
-
-		this.addGrabListeners();
 	}
 
 	addGrabListeners() {
-		let allRows = document.querySelectorAll(".schedulerRow-" + this.scheduleId);
-
 		let body = document.getElementById(`schedulerBody-${this.scheduleId}`);
 
 		body.addEventListener("mousedown", (e) => {
@@ -365,7 +391,7 @@ class Scheduler {
 				const startTime =
 					parseInt(card.dataset.timeStart.split(":")[0]) * 60 +
 					parseInt(card.dataset.timeStart.split(":")[1]);
-				if (newTime <= startTime + 15) {
+				if (newTime <= startTime) {
 				} else {
 					card.dataset.length = newTime - startTime + 15;
 					card.style.height = newTime - startTime + 15 + "px";
@@ -380,27 +406,30 @@ class Scheduler {
 			}
 		});
 		body.addEventListener("mouseup", (e) => {
-			let eventId = this.eventGrabbed.id;
-			const card = document.getElementById("event-" + eventId);
-			this.checkOverlap(card);
-			const clone = document.getElementById(
-				"eventClone-" + this.eventGrabbed.id
-			);
-			if (clone) {
-				clone.remove();
+			if (this.eventGrabbed.grabbed || this.eventGrabbed.resizing) {
+				let eventId = this.eventGrabbed.id;
+				const card = document.getElementById("event-" + eventId);
+				this.checkOverlap(card);
+				console.log();
+				const clone = document.getElementById(
+					"eventClone-" + this.eventGrabbed.id
+				);
+				if (clone) {
+					clone.remove();
+				}
+				card.style.zIndex = 3;
+				card.style.boxShadow = "";
+				card.style.pointerEvents = "all";
+
+				this.updateEventData(eventId);
+
+				this.eventGrabbed = {
+					grabbed: false,
+					resizing: false,
+					id: "",
+					prevPos: "",
+				};
 			}
-			card.style.zIndex = 3;
-			card.style.boxShadow = "";
-			card.style.pointerEvents = "all";
-
-			this.updateEventData(eventId);
-
-			this.eventGrabbed = {
-				grabbed: false,
-				resizing: false,
-				id: "",
-				prevPos: "",
-			};
 		});
 	}
 
@@ -415,8 +444,6 @@ class Scheduler {
 			console.log(this.events);
 		}
 	}
-
-	resetEventPos() {}
 
 	addLengthToTime(timeStart, length) {
 		let startMinutes =
@@ -436,5 +463,267 @@ class Scheduler {
 			`.schedulerColumn-${this.scheduleId}[data-day="${event.dataset.day}"]`
 		);
 		console.log(column);
+	}
+
+	createAddModal(e) {
+		let body = document.getElementById(`schedulerBody-${this.scheduleId}`);
+		let scheduler = document.getElementById(`${this.scheduleId}`);
+
+		let container = document.createElement("div");
+		container.classList.add("schedulerModalContainer");
+		container.classList.add("schedulerModalContainer-" + this.scheduleId);
+
+		let posX = e.clientX - body.offsetLeft + scheduler.scrollLeft;
+
+		if (body.offsetWidth - posX < container.offsetWidth) {
+			container.style.left = posX - container.offsetWidth + "px";
+		} else {
+			container.style.left = posX + "px";
+		}
+
+		container.style.top = e.clientY - body.offsetTop + body.scrollTop + "px";
+
+		console.log(
+			body.offsetWidth - (e.clientX - body.offsetLeft + scheduler.scrollLeft)
+		);
+
+		let modalTitle = document.createElement("p");
+		modalTitle.classList.add("schedulerModalTitle");
+		modalTitle.classList.add("schedulerModalTitle-" + this.scheduleId);
+		modalTitle.innerText = "Add Schedule";
+
+		container.appendChild(modalTitle);
+
+		const createInputContainer = (text, elem) => {
+			let modalInputContainer = document.createElement("div");
+			modalInputContainer.classList.add("schedulerModalInputContainer");
+			modalInputContainer.classList.add(
+				"schedulerModalInputContainer-" + this.scheduleId
+			);
+
+			let modalInputLabel = document.createElement("p");
+			modalInputLabel.classList.add("schedulerModalInputLabel");
+			modalInputLabel.classList.add(
+				"schedulerModalInputLabel-" + this.scheduleId
+			);
+			modalInputLabel.innerText = text;
+
+			modalInputContainer.appendChild(modalInputLabel);
+
+			modalInputContainer.appendChild(elem);
+
+			return modalInputContainer;
+		};
+
+		let modalInputTitle = document.createElement("input");
+		modalInputTitle.classList.add("schedulerModalInputTitle");
+		modalInputTitle.classList.add(
+			"schedulerModalInputTitle-" + this.scheduleId
+		);
+		modalInputTitle.type = "text";
+		modalInputTitle.name = "modalTitle";
+		modalInputTitle.placeholder = "Schedule title...";
+
+		container.appendChild(createInputContainer("Title:", modalInputTitle));
+
+		let modalInputDay = document.createElement("select");
+		modalInputDay.classList.add("schedulerModalInputSelect");
+		modalInputDay.classList.add("schedulerModalInputSelect-" + this.scheduleId);
+		modalInputDay.name = "modalDay";
+		modalInputDay.value = this.hoveredTime.day;
+
+		days.forEach((day, i) => {
+			let modalInputOption = document.createElement("option");
+			modalInputOption.classList.add("schedulerModalInputOption");
+			modalInputOption.classList.add(
+				"schedulerModalInputOption-" + this.scheduleId
+			);
+			modalInputOption.value = i;
+			modalInputOption.innerText = day;
+			if (i == this.hoveredTime.day) {
+				modalInputOption.selected = true;
+			}
+			modalInputDay.appendChild(modalInputOption);
+		});
+
+		container.appendChild(createInputContainer("Day:", modalInputDay));
+
+		let modalInputTimeStart = document.createElement("select");
+		modalInputTimeStart.classList.add("schedulerModalInputTime");
+		modalInputTimeStart.classList.add(
+			"schedulerModalInputTime-" + this.scheduleId
+		);
+
+		for (let i = 0; i < 25; i++) {
+			let option = document.createElement("option");
+			option.classList.add("schedulerModalInputOption");
+			option.classList.add("schedulerModalInputOption-" + this.scheduleId);
+			option.value = i.toString().padStart(2, "0");
+			option.innerText = i.toString().padStart(2, "0");
+			if (
+				i.toString().padStart(2, "0") == this.hoveredTime.time.split(":")[0]
+			) {
+				option.selected = true;
+			}
+			modalInputTimeStart.appendChild(option);
+		}
+
+		let modalInputTimeStartMinutes = document.createElement("select");
+		modalInputTimeStartMinutes.classList.add("schedulerModalInputTime");
+		modalInputTimeStartMinutes.classList.add(
+			"schedulerModalInputTime-" + this.scheduleId
+		);
+
+		for (let i = 0; i < 4; i++) {
+			let minutes = ["00", "15", "30", "45"];
+			let option = document.createElement("option");
+			option.classList.add("schedulerModalInputOption");
+			option.classList.add("schedulerModalInputOption-" + this.scheduleId);
+			option.value = minutes[i];
+			option.innerText = minutes[i];
+			if (minutes[i] == this.hoveredTime.time.split(":")[1]) {
+				option.selected = true;
+			}
+			modalInputTimeStartMinutes.appendChild(option);
+		}
+
+		container.appendChild(createInputContainer("Start:", modalInputTimeStart));
+		modalInputTimeStart.insertAdjacentElement(
+			"afterend",
+			modalInputTimeStartMinutes
+		);
+
+		let modalInputTimeEnd = document.createElement("select");
+		modalInputTimeEnd.classList.add("schedulerModalInputTime");
+		modalInputTimeEnd.classList.add(
+			"schedulerModalInputTime-" + this.scheduleId
+		);
+
+		for (let i = 0; i < 25; i++) {
+			let option = document.createElement("option");
+			option.classList.add("schedulerModalInputOption");
+			option.classList.add("schedulerModalInputOption-" + this.scheduleId);
+			option.value = i.toString().padStart(2, "0");
+			option.innerText = i.toString().padStart(2, "0");
+			if (
+				i.toString().padStart(2, "0") ==
+				parseInt(this.hoveredTime.time.split(":")[0]) + 1
+			) {
+				option.selected = true;
+			}
+			modalInputTimeEnd.appendChild(option);
+		}
+
+		let modalInputTimeEndMinutes = document.createElement("select");
+		modalInputTimeEndMinutes.classList.add("schedulerModalInputTime");
+		modalInputTimeEndMinutes.classList.add(
+			"schedulerModalInputTime-" + this.scheduleId
+		);
+
+		for (let i = 0; i < 4; i++) {
+			let minutes = ["00", "15", "30", "45"];
+			let option = document.createElement("option");
+			option.classList.add("schedulerModalInputOption");
+			option.classList.add("schedulerModalInputOption-" + this.scheduleId);
+			option.value = minutes[i];
+			option.innerText = minutes[i];
+			if (parseInt(this.hoveredTime.time.split(":")[0]) + 1 >= 24) {
+				if (i === 0) {
+					option.selected = true;
+				}
+			} else {
+				if (minutes[i] == this.hoveredTime.time.split(":")[1]) {
+					option.selected = true;
+				}
+			}
+			modalInputTimeEndMinutes.appendChild(option);
+		}
+
+		container.appendChild(createInputContainer("End:", modalInputTimeEnd));
+		modalInputTimeEnd.insertAdjacentElement(
+			"afterend",
+			modalInputTimeEndMinutes
+		);
+
+		let modalButton = document.createElement("button");
+		modalButton.classList.add("schedulerModalButton");
+		modalButton.classList.add("schedulerModalButton-" + this.scheduleId);
+		modalButton.innerText = "Add";
+		modalButton.type = "button";
+
+		container.appendChild(modalButton);
+
+		modalButton.addEventListener("click", (e) => {
+			let eventData = {
+				title: modalInputTitle.value,
+				day: modalInputDay.value,
+				timeStart:
+					modalInputTimeStart.value + ":" + modalInputTimeStartMinutes.value,
+				timeEnd: modalInputTimeEnd.value + ":" + modalInputTimeEndMinutes.value,
+			};
+			this.createNewEvent(eventData);
+		});
+
+		let modalChildren = container.childNodes;
+		modalChildren.forEach((child) => {
+			child.classList.add("schedulerModalItem-" + this.scheduleId);
+			if (child.classList.contains("schedulerModalInputContainer")) {
+				let grandchildren = child.childNodes;
+				grandchildren.forEach((grandchild) =>
+					grandchild.classList.add("schedulerModalItem-" + this.scheduleId)
+				);
+			}
+		});
+
+		body.appendChild(container);
+	}
+
+	createEditModal(e) {
+		let body = document.getElementById(`schedulerBody-${this.scheduleId}`);
+
+		let container = document.createElement("div");
+		container.classList.add("schedulerModalContainer");
+		container.classList.add("schedulerModalContainer-" + this.scheduleId);
+		container.style.top = e.clientY - body.offsetTop + body.scrollTop + "px";
+		container.style.left = e.clientX - body.offsetLeft + "px";
+
+		let modalTitle = document.createElement("p");
+		modalTitle.classList.add("schedulerModalTitle");
+		modalTitle.classList.add("schedulerModalTitle-" + this.scheduleId);
+		modalTitle.innerText = e.target.dataset.title;
+
+		container.appendChild(modalTitle);
+
+		body.appendChild(container);
+	}
+
+	getMinuteAmount(timeStamp) {
+		let hours = parseInt(timeStamp.split(":")[0]) * 60;
+		let minutes = parseInt(timeStamp.split(":")[1]);
+
+		return hours + minutes;
+	}
+
+	convertToTimeStamp(minuteAmount) {
+		let hours = Math.floor(parseInt(minuteAmount) / 60)
+			.toString()
+			.padStart(2, "0");
+		let minutes = (parseInt(minuteAmount) % 60).toString().padStart(2, "0");
+
+		return `${hours}:${minutes}`;
+	}
+
+	createNewEvent(eventData) {
+		if (!eventData.title) {
+			eventData.title = "Schedule";
+		}
+		let start = this.getMinuteAmount(eventData.timeStart);
+		let end = this.getMinuteAmount(eventData.timeEnd);
+		if (start >= end) {
+			eventData.timeEnd = this.convertToTimeStamp(start + 30);
+		}
+		console.log(eventData);
+		this.events.push(eventData);
+		this.loadEvents(this.events);
 	}
 }
