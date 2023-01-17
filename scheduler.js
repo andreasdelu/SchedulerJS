@@ -9,9 +9,10 @@ const days = [
 ];
 
 class Scheduler {
-	constructor(element = "", events = [], timeFormat = 24) {
+	constructor(element = "", events = [], timeFormat = 24, playlists = []) {
 		this.element = document.querySelector(element);
 		this.events = events;
+		this.playlists = playlists;
 		this.timeFormat = timeFormat;
 		this.scheduleId = crypto.randomUUID();
 		this.hoveredTime = "00:00";
@@ -21,6 +22,7 @@ class Scheduler {
 			id: "",
 			prevPos: "",
 		};
+		this.mousePosition = { x: 0, y: 0 };
 		let self = this;
 
 		this.init();
@@ -44,6 +46,14 @@ class Scheduler {
 		this.loadEvents(this.events);
 
 		this.addGrabListeners();
+
+		let timeLine = document.getElementById(
+			"schedulerCurrentTimeLine-" + this.scheduleId
+		);
+
+		setTimeout(() => {
+			timeLine.scrollIntoView({ behavior: "smooth", block: "center" });
+		}, 200);
 	}
 
 	createHeader() {
@@ -97,7 +107,7 @@ class Scheduler {
 		let hoverTime = document.createElement("div");
 		hoverTime.classList.add("schedulerHoverTime");
 		hoverTime.id = "schedulerHoverTime-" + this.scheduleId;
-		hoverTime.innerText = "21:00";
+		hoverTime.innerText = "00:00";
 
 		timesContainer.appendChild(hoverTime);
 
@@ -128,8 +138,15 @@ class Scheduler {
 			contentContainer.appendChild(column);
 		}
 
+		let showHover = document.createElement("div");
+		showHover.classList.add(
+			`schedulerHover`,
+			`schedulerHover-${this.scheduleId}`
+		);
+
 		contentContainer.appendChild(this.createCurrentTimeIndicator());
 
+		bodyContainer.appendChild(showHover);
 		bodyContainer.appendChild(contentContainer);
 
 		bodyContainer.addEventListener("mousemove", (e) =>
@@ -139,6 +156,7 @@ class Scheduler {
 			this.handleMouseOut(e, this.scheduleId)
 		);
 		bodyContainer.addEventListener("mousedown", (e) => {
+			if (e.button === 2) return;
 			if (this.eventGrabbed.grabbed || this.eventGrabbed.resizing) return;
 			if (e.target.classList.contains("schedulerModalItem-" + this.scheduleId))
 				return;
@@ -194,10 +212,20 @@ class Scheduler {
 		let target = e.target;
 		let hoverTime = document.getElementById(`schedulerHoverTime-${id}`);
 		let body = document.getElementById(`schedulerBody-${id}`);
+		let rect = body.getBoundingClientRect();
+		let position = {
+			x: e.clientX - rect.left,
+			y: e.clientY - rect.top,
+		};
+		this.mousePosition = position;
+		let mousePos = position.y + body.scrollTop;
+		let showHover = document.querySelector(
+			`.schedulerHover-${self.scheduleId}`
+		);
 		if (target.classList.contains("schedulerRow")) {
 			hoverTime.style.opacity = 1;
-			let mousePos = e.clientY + body.scrollTop - body.offsetTop - 25;
-			let rowPos = mousePos - target.offsetTop + 25;
+			showHover.style.opacity = 1;
+			let rowPos = mousePos - target.offsetTop;
 
 			if (rowPos <= 15) {
 				hoverTime.style.transform = `translateY(${target.offsetTop}px)`;
@@ -206,6 +234,8 @@ class Scheduler {
 					time: target.dataset.time + ":00",
 					day: target.dataset.day,
 				};
+				showHover.style.top = "0px";
+				target.appendChild(showHover);
 			} else if (rowPos <= 30 && rowPos > 15) {
 				hoverTime.style.transform = `translateY(${target.offsetTop + 15}px)`;
 				hoverTime.innerText = target.dataset.time + ":15";
@@ -213,6 +243,8 @@ class Scheduler {
 					time: target.dataset.time + ":15",
 					day: target.dataset.day,
 				};
+				showHover.style.top = "15px";
+				target.appendChild(showHover);
 			} else if (rowPos <= 45 && rowPos > 30) {
 				hoverTime.style.transform = `translateY(${target.offsetTop + 30}px)`;
 				hoverTime.innerText = target.dataset.time + ":30";
@@ -220,6 +252,8 @@ class Scheduler {
 					time: target.dataset.time + ":30",
 					day: target.dataset.day,
 				};
+				showHover.style.top = "30px";
+				target.appendChild(showHover);
 			} else if (rowPos <= 60 && rowPos > 45) {
 				hoverTime.style.transform = `translateY(${target.offsetTop + 45}px)`;
 				hoverTime.innerText = target.dataset.time + ":45";
@@ -227,9 +261,12 @@ class Scheduler {
 					time: target.dataset.time + ":45",
 					day: target.dataset.day,
 				};
+				showHover.style.top = "45px";
+				target.appendChild(showHover);
 			}
 		} else {
 			hoverTime.style.opacity = 0;
+			showHover.style.opacity = 0;
 		}
 	}
 	handleMouseOut(e, id) {
@@ -273,10 +310,22 @@ class Scheduler {
 				eventCard.dataset.timeStart = event.timeStart;
 				eventCard.dataset.timeEnd = event.timeEnd;
 				eventCard.dataset.title = event.title;
+				eventCard.dataset.playlist = event.playlist;
 
 				let eventInfo = document.createElement("div");
 				eventInfo.classList.add("schedulerEventInfo");
 				eventInfo.classList.add("schedulerEventInfo-" + this.scheduleId);
+
+				let eventPlaylist = document.createElement("p");
+				eventPlaylist.classList.add("schedulerEventPlaylist");
+				eventPlaylist.classList.add(
+					"schedulerEventPlaylist-" + this.scheduleId
+				);
+				this.playlists.forEach((list) => {
+					if (event.playlist === list._id) {
+						eventPlaylist.innerText = list.clientTitle;
+					}
+				});
 
 				let eventTitle = document.createElement("p");
 				eventTitle.classList.add("schedulerEventTitle");
@@ -288,6 +337,7 @@ class Scheduler {
 				eventTime.classList.add("schedulerEventTime-" + this.scheduleId);
 				eventTime.innerText = event.timeStart + " - " + event.timeEnd;
 
+				eventInfo.appendChild(eventPlaylist);
 				eventInfo.appendChild(eventTitle);
 				eventInfo.appendChild(eventTime);
 
@@ -306,6 +356,15 @@ class Scheduler {
 				eventResize.classList.add("schedulerEventResizer-" + this.scheduleId);
 				eventResize.id = `schedulerEventResizer-${eventId}`;
 				eventResize.dataset.event = eventId;
+
+				let eventBackground = document.createElement("div");
+				eventBackground.classList.add("schedulerEventBackground");
+				eventBackground.classList.add(
+					"schedulerEventBackground-" + this.scheduleId
+				);
+				/* eventBackground.style.backgroundImage = `url(${event.playlist.coverArt})`; */
+
+				eventCard.appendChild(eventBackground);
 
 				eventCard.appendChild(eventGrabber);
 				eventCard.appendChild(eventResize);
@@ -409,19 +468,24 @@ class Scheduler {
 			if (this.eventGrabbed.grabbed || this.eventGrabbed.resizing) {
 				let eventId = this.eventGrabbed.id;
 				const card = document.getElementById("event-" + eventId);
-				this.checkOverlap(card);
-				console.log();
 				const clone = document.getElementById(
 					"eventClone-" + this.eventGrabbed.id
 				);
-				if (clone) {
-					clone.remove();
+				if (this.checkGrabOverlap(card)) {
+					card.remove();
+					clone.id = "event-" + eventId;
+					clone.classList.remove("schedulerEventIsGrabbed");
+					clone.style.pointerEvents = "all";
+				} else {
+					if (clone) {
+						clone.remove();
+					}
+					card.style.zIndex = 3;
+					card.style.boxShadow = "";
+					card.style.pointerEvents = "all";
+					card.style.width = "";
+					this.updateEventData(eventId);
 				}
-				card.style.zIndex = 3;
-				card.style.boxShadow = "";
-				card.style.pointerEvents = "all";
-
-				this.updateEventData(eventId);
 
 				this.eventGrabbed = {
 					grabbed: false,
@@ -441,6 +505,7 @@ class Scheduler {
 			event.day = card.dataset.day;
 			event.timeStart = card.dataset.timeStart;
 			event.timeEnd = card.dataset.timeEnd;
+			event.playlist = card.dataset.playlist;
 			console.log(this.events);
 		}
 	}
@@ -457,12 +522,61 @@ class Scheduler {
 		return newLength;
 	}
 
-	checkOverlap(event) {
+	checkGrabOverlap(event) {
 		/* Get column events */
 		let column = document.querySelector(
 			`.schedulerColumn-${this.scheduleId}[data-day="${event.dataset.day}"]`
 		);
-		console.log(column);
+
+		let rowsInColumn = column.querySelectorAll(
+			`.schedulerRow-${this.scheduleId}`
+		);
+
+		let foundEvents = [];
+		rowsInColumn.forEach((row) => {
+			if (row.hasChildNodes()) {
+				let events = row.querySelectorAll(`.schedulerEvent-${this.scheduleId}`);
+				foundEvents.push(...events);
+			}
+		});
+
+		if (foundEvents.length <= 1) {
+			return;
+		}
+
+		for (const foundEvent of foundEvents) {
+			if (foundEvent.id === event.id || foundEvent.id.includes("eventClone"))
+				continue;
+			let eventStart = this.getMinuteAmount(event.dataset.timeStart);
+			let eventEnd = this.getMinuteAmount(event.dataset.timeEnd);
+			let foundStart = this.getMinuteAmount(foundEvent.dataset.timeStart);
+			let foundEnd = this.getMinuteAmount(foundEvent.dataset.timeEnd);
+
+			if (
+				(eventStart >= foundStart && eventStart < foundEnd) ||
+				(eventEnd > foundStart && eventEnd <= foundEnd)
+			) {
+				return true;
+			} else {
+				return false;
+			}
+		}
+	}
+	checkAddOverlap(start, end, day) {
+		for (const event of this.events) {
+			if (event.day != day) continue;
+			let eventStart = this.getMinuteAmount(event.timeStart);
+			let eventEnd = this.getMinuteAmount(event.timeEnd);
+
+			if (
+				(start >= eventStart && start < eventEnd) ||
+				(end > eventStart && end <= eventEnd)
+			) {
+				return true;
+			} else {
+				return false;
+			}
+		}
 	}
 
 	createAddModal(e) {
@@ -472,20 +586,35 @@ class Scheduler {
 		let container = document.createElement("div");
 		container.classList.add("schedulerModalContainer");
 		container.classList.add("schedulerModalContainer-" + this.scheduleId);
+		body.appendChild(container);
 
-		let posX = e.clientX - body.offsetLeft + scheduler.scrollLeft;
+		let posX = this.mousePosition.x + body.scrollLeft;
+		let posY = this.mousePosition.y + body.scrollTop;
 
-		if (body.offsetWidth - posX < container.offsetWidth) {
-			container.style.left = posX - container.offsetWidth + "px";
+		if (scheduler.offsetWidth - this.mousePosition.x < container.offsetWidth) {
+			container.style.left =
+				posX -
+				container.offsetWidth +
+				(scheduler.offsetWidth - this.mousePosition.x) -
+				10 +
+				"px";
 		} else {
 			container.style.left = posX + "px";
 		}
 
-		container.style.top = e.clientY - body.offsetTop + body.scrollTop + "px";
-
-		console.log(
-			body.offsetWidth - (e.clientX - body.offsetLeft + scheduler.scrollLeft)
-		);
+		if (
+			scheduler.offsetHeight - this.mousePosition.y <
+			container.offsetHeight
+		) {
+			container.style.top =
+				posY -
+				container.offsetHeight +
+				(scheduler.offsetHeight - this.mousePosition.y) -
+				60 +
+				"px";
+		} else {
+			container.style.top = posY + "px";
+		}
 
 		let modalTitle = document.createElement("p");
 		modalTitle.classList.add("schedulerModalTitle");
@@ -525,6 +654,10 @@ class Scheduler {
 		modalInputTitle.placeholder = "Schedule title...";
 
 		container.appendChild(createInputContainer("Title:", modalInputTitle));
+
+		container.appendChild(
+			createInputContainer("Playlist:", this.createPlaylistDropdown())
+		);
 
 		let modalInputDay = document.createElement("select");
 		modalInputDay.classList.add("schedulerModalInputSelect");
@@ -654,14 +787,19 @@ class Scheduler {
 		container.appendChild(modalButton);
 
 		modalButton.addEventListener("click", (e) => {
+			let playlistInfo = document.querySelector(
+				".schedulerModalInputPlaylistPicked-" + this.scheduleId
+			);
 			let eventData = {
 				title: modalInputTitle.value,
 				day: modalInputDay.value,
 				timeStart:
 					modalInputTimeStart.value + ":" + modalInputTimeStartMinutes.value,
 				timeEnd: modalInputTimeEnd.value + ":" + modalInputTimeEndMinutes.value,
+				playlist: playlistInfo.dataset.playlistid,
 			};
 			this.createNewEvent(eventData);
+			container.remove();
 		});
 
 		let modalChildren = container.childNodes;
@@ -675,7 +813,7 @@ class Scheduler {
 			}
 		});
 
-		body.appendChild(container);
+		container.classList.add("schedulerModalItem-" + this.scheduleId);
 	}
 
 	createEditModal(e) {
@@ -722,8 +860,183 @@ class Scheduler {
 		if (start >= end) {
 			eventData.timeEnd = this.convertToTimeStamp(start + 30);
 		}
-		console.log(eventData);
-		this.events.push(eventData);
-		this.loadEvents(this.events);
+		if (!eventData.playlist) {
+			console.error("No playlist added to schedule!");
+			return;
+		}
+		if (this.checkAddOverlap(start, end, eventData.day)) {
+			console.error("Cannot add schedule that overlaps another");
+			return;
+		} else {
+			this.events.push(eventData);
+			this.loadEvents(this.events);
+		}
+	}
+
+	createPlaylistDropdown() {
+		let sortedPlaylists = this.playlists.sort((a, b) =>
+			a.clientTitle.localeCompare(b.clientTitle)
+		);
+
+		let modalInputPlaylistsPicked = document.createElement("div");
+		modalInputPlaylistsPicked.classList.add(
+			"schedulerModalInputPlaylistPicked"
+		);
+		modalInputPlaylistsPicked.classList.add(
+			"schedulerModalInputPlaylistPicked-" + this.scheduleId
+		);
+
+		modalInputPlaylistsPicked.addEventListener("click", (e) => {
+			createDropdown();
+			getPlaylists("");
+		});
+
+		let modalInputPlaylistsPickedTitle = document.createElement("p");
+		modalInputPlaylistsPickedTitle.classList.add(
+			"schedulerModalInputPlaylistPickedTitle"
+		);
+		modalInputPlaylistsPickedTitle.classList.add(
+			"schedulerModalInputPlaylistPickedTitle-" + this.scheduleId
+		);
+		modalInputPlaylistsPickedTitle.classList.add(
+			"schedulerModalItem-" + this.scheduleId
+		);
+
+		modalInputPlaylistsPickedTitle.innerText = "Select playlist";
+
+		let modalInputPlaylistsPickedImage = document.createElement("img");
+		modalInputPlaylistsPickedImage.classList.add(
+			"schedulerModalInputPlaylistPickedImage"
+		);
+		modalInputPlaylistsPickedImage.classList.add(
+			"schedulerModalInputPlaylistPickedImage-" + this.scheduleId
+		);
+		modalInputPlaylistsPickedImage.classList.add(
+			"schedulerModalItem-" + this.scheduleId
+		);
+
+		modalInputPlaylistsPicked.appendChild(modalInputPlaylistsPickedImage);
+		modalInputPlaylistsPicked.appendChild(modalInputPlaylistsPickedTitle);
+
+		const createDropdown = (query) => {
+			let dropdown = document.createElement("div");
+			dropdown.classList.add("schedulerModalItem-" + this.scheduleId);
+			dropdown.classList.add("schedulerModalPlaylistDropdown");
+			dropdown.classList.add(
+				"schedulerModalPlaylistDropdown-" + this.scheduleId
+			);
+			let dropdownTitle = document.createElement("p");
+			dropdownTitle.classList.add("schedulerModalItem-" + this.scheduleId);
+			dropdownTitle.classList.add("schedulerModalPlaylistDropdownTitle");
+			dropdownTitle.classList.add(
+				"schedulerModalPlaylistDropdownTitle-" + this.scheduleId
+			);
+			dropdownTitle.innerText = "Results:";
+
+			let modalInputPlaylists = document.createElement("input");
+			modalInputPlaylists.classList.add(
+				"schedulerModalItem-" + this.scheduleId
+			);
+			modalInputPlaylists.classList.add("schedulerModalInputPlaylistSearch");
+			modalInputPlaylists.classList.add(
+				"schedulerModalInputPlaylistSearch-" + this.scheduleId
+			);
+			modalInputPlaylists.name = "modalPlaylists";
+			modalInputPlaylists.placeholder = "Search playlists...";
+
+			modalInputPlaylists.oninput = (e) => {
+				document.querySelector(
+					".schedulerModalPlaylistDropdownLists-" + this.scheduleId
+				).innerHTML = "";
+				getPlaylists(e.target.value);
+			};
+
+			dropdown.appendChild(modalInputPlaylists);
+			dropdown.appendChild(dropdownTitle);
+
+			let dropdownLists = document.createElement("div");
+			dropdownLists.classList.add("schedulerModalItem-" + this.scheduleId);
+			dropdownLists.classList.add("schedulerModalPlaylistDropdownLists");
+			dropdownLists.classList.add(
+				"schedulerModalPlaylistDropdownLists-" + this.scheduleId
+			);
+
+			dropdownLists.addEventListener("click", (e) => {
+				if (
+					e.target.classList.contains(
+						"schedulerModalPlaylistDropdownPlaylist-" + this.scheduleId
+					)
+				) {
+					modalInputPlaylistsPicked.dataset.playlistid = e.target.id;
+					modalInputPlaylistsPicked.dataset.name = e.target.dataset.name;
+					modalInputPlaylistsPicked.dataset.image = e.target.dataset.img;
+					modalInputPlaylistsPickedTitle.innerText = e.target.dataset.name;
+					modalInputPlaylistsPickedImage.src = e.target.dataset.img;
+					dropdown.remove();
+				}
+			});
+
+			let closeBtn = document.createElement("div");
+			closeBtn.classList.add("schedulerModalItem-" + this.scheduleId);
+			closeBtn.classList.add("schedulerModalPlaylistDropdownClose");
+			closeBtn.classList.add(
+				"schedulerModalPlaylistDropdownClose-" + this.scheduleId
+			);
+			closeBtn.innerHTML = `
+			<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><path d="M310.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L160 210.7 54.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L114.7 256 9.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L160 301.3 265.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L205.3 256 310.6 150.6z"/></svg>
+			`;
+
+			closeBtn.onclick = () => {
+				dropdown.remove();
+			};
+
+			dropdown.appendChild(closeBtn);
+			dropdown.appendChild(dropdownLists);
+
+			modalInputPlaylistsPicked.insertAdjacentElement("afterend", dropdown);
+		};
+
+		const getPlaylists = (query) => {
+			sortedPlaylists.forEach((playlist, i) => {
+				if (playlist.clientTitle.toLowerCase().includes(query.toLowerCase())) {
+					let list = document.createElement("div");
+					list.classList.add("schedulerModalItem-" + this.scheduleId);
+					list.classList.add("schedulerModalPlaylistDropdownPlaylist");
+					list.classList.add(
+						"schedulerModalPlaylistDropdownPlaylist-" + this.scheduleId
+					);
+					list.dataset.name = playlist.clientTitle;
+					list.dataset.img = playlist.coverArt;
+					list.id = playlist._id;
+					let playlistTitle = document.createElement("p");
+					playlistTitle.classList.add("schedulerModalItem-" + this.scheduleId);
+					playlistTitle.classList.add(
+						"schedulerModalPlaylistDropdownPlaylistTitle"
+					);
+					playlistTitle.classList.add(
+						"schedulerModalPlaylistDropdownPlaylistTitle-" + this.scheduleId
+					);
+					playlistTitle.innerText = playlist.clientTitle;
+					let playlistImage = document.createElement("img");
+					playlistImage.classList.add("schedulerModalItem-" + this.scheduleId);
+					playlistImage.classList.add(
+						"schedulerModalPlaylistDropdownPlaylistImage"
+					);
+					playlistImage.classList.add(
+						"schedulerModalPlaylistDropdownPlaylistImage-" + this.scheduleId
+					);
+					playlistImage.src = playlist.coverArt;
+
+					list.appendChild(playlistImage);
+					list.appendChild(playlistTitle);
+					let dropdownLists = document.querySelector(
+						".schedulerModalPlaylistDropdownLists-" + this.scheduleId
+					);
+					dropdownLists.appendChild(list);
+				}
+			});
+		};
+
+		return modalInputPlaylistsPicked;
 	}
 }
